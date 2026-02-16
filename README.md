@@ -15,7 +15,7 @@ ollama pull gemma2:2b
 2) Скачайте проект с GitHub
 Откройте терминал и выполните:
 git clone https://github.com/polinafort/email-generator-mvp.git
-cd email-generator-mvp
+cd email-generator-mvpаа
 
 3) Создайте виртуальное окружение и установите зависимости через терминал Windows
 python -m venv .venv
