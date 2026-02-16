@@ -3,7 +3,7 @@ import requests
 from prompt import build_prompt
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "llama3:8b"  # поменяйте на gemma2:2b если нужно
+MODEL = "gemma2:2b"  
 
 def ollama_generate(prompt: str) -> str:
     payload = {
