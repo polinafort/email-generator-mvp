@@ -57,15 +57,7 @@ with st.form("email_form"):
         height=120,
     )
 
-    st.subheader("Подпись отправителя")
-    col1, col2 = st.columns(2)
-    with col1:
-        signer_name = st.text_input("Имя Фамилия", value="Светлана Реутова")
-    with col2:
-        signer_role = st.text_input("Должность", value="Менеджер по развитию партнеров")
-
-    signer_contact = st.text_input("Контакт (Telegram/почта)", value="Telegram: [вставьте ссылку]")
-
+    
     submitted = st.form_submit_button("Сгенерировать письмо")
 
 
