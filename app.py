@@ -72,9 +72,6 @@ if submitted:
         must_include=must_include,
         culture=culture,
         context=context,
-        signer_name=signer_name,
-        signer_role=signer_role,
-        signer_contact=signer_contact,
     )
 
     with st.spinner("Генерирую письмо..."):
