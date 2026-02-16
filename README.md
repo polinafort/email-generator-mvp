@@ -7,15 +7,13 @@ Python 3.10+
 Ollama (запускает LLM локально)
 
 1) Установите Ollama и скачайте модель
-Установите Ollama: https://ollama.com/download
+2) Установите Ollama: https://ollama.com/download
 
 Скачайте модель (один раз):
 ollama pull gemma2:2b
 
 2) Скачайте проект с GitHub
 Откройте терминал и выполните:
-
-bash
 git clone https://github.com/polinafort/email-generator-mvp.git
 cd email-generator-mvp
 
