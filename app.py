@@ -67,7 +67,7 @@ def fallback_plan(campaign_type: str, link_url: str) -> dict:
 
 def sanitize_plan(plan: dict, campaign_type: str, link_url: str) -> dict:
     """
-    Страховка: убираем промо-блоки из НЕ promo и добавляем link-блок, если ссылка дана.
+    Страховка: убираем промо-блоки из НЕ promo и добавляем instruction_link, если ссылка дана.
     """
     plan = plan or {}
     blocks = plan.get("blocks") or []
@@ -75,27 +75,22 @@ def sanitize_plan(plan: dict, campaign_type: str, link_url: str) -> dict:
 
     if not is_promo:
         blocks = [b for b in blocks if b not in ("offer", "promo_terms")]
-        # requirements полезен почти всегда (как "Что учитывать")
-        if "requirements" not in blocks and campaign_type not in ("Праздник/поздравление", "Дайджест/новости"):
-            if "cta" in blocks:
-                blocks.insert(blocks.index("cta"), "requirements")
-            else:
-                blocks.append("requirements")
 
-    # если ссылка дана — добавим instruction_link там, где уместно
+    # если ссылка дана — добавим instruction_link для сценариев, где это обычно полезно
     if link_url and link_url.strip():
-        if campaign_type in ("Анонс фичи/продукта", "Реактивация (вернуть пользователя)", "Другое (опишите в цели и контексте)"):
+        if campaign_type in (
+            "Анонс фичи/продукта",
+            "Реактивация (вернуть пользователя)",
+            "Опрос/NPS/обратная связь",
+            "Другое (опишите в цели и контексте)",
+        ):
             if "instruction_link" not in blocks:
-                # логично вставить после how_it_works, а если его нет — после intro
                 if "how_it_works" in blocks:
                     blocks.insert(blocks.index("how_it_works") + 1, "instruction_link")
                 elif "intro" in blocks:
                     blocks.insert(blocks.index("intro") + 1, "instruction_link")
                 else:
                     blocks.insert(0, "instruction_link")
-        if campaign_type == "Вебинар/ивент":
-            # для вебинара instruction_link не обязателен, достаточно ссылки в CTA, но не мешает
-            pass
 
     plan["blocks"] = blocks
     return plan
@@ -156,6 +151,7 @@ if submitted:
         st.error("Заполните минимум: тема, ЦА, цель, обязательные пункты.")
         st.stop()
 
+    # 1) Planner (внутренний шаг)
     planner_prompt = build_planner_prompt(
         campaign_type=campaign_type,
         audience=audience,
@@ -177,6 +173,7 @@ if submitted:
 
         plan = sanitize_plan(plan, campaign_type, link_url)
 
+        # 2) Writer
         writer_prompt = build_writer_prompt(
             plan=plan,
             campaign_type=campaign_type,
