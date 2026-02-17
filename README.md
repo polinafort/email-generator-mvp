@@ -6,8 +6,14 @@
 
 # Установка и запуск приложения
 
-## 1) Установите Ollama и скачайте модель
-Установите Ollama: https://ollama.com/download
+## 1) Установите нужное ПО
+Git: https://git-scm.com/downloads
+
+Python 3.10+: https://www.python.org/downloads/
+
+При установке на Windows отметьте галочку “Add Python to PATH”.
+
+Ollama: https://ollama.com/download
 
 Скачайте модель (один раз):
 
