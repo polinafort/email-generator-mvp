@@ -24,7 +24,6 @@ def ollama_generate(prompt: str, *, temperature: float, num_predict: int) -> str
 
 
 def fallback_plan(campaign_type: str) -> dict:
-    # Минимальный запасной план, если planner JSON сломался
     mapping = {
         "Анонс фичи/продукта": {
             "preset_id": "feature",
@@ -39,7 +38,7 @@ def fallback_plan(campaign_type: str) -> dict:
             "preset_id": "promo",
             "blocks": ["intro", "offer", "benefits", "promo_terms", "cta", "help_link", "help"],
             "benefits_title": "Что вы получите",
-            "cta_text": "Участвовать в акции",
+            "cta_text": "Воспользоваться предложением",
             "cta_link_placeholder": "[вставьте ссылку]",
             "include_help_link": True,
             "notes": "fallback",
@@ -89,8 +88,60 @@ def fallback_plan(campaign_type: str) -> dict:
             "include_help_link": False,
             "notes": "fallback",
         },
+        "Другое (опишите в цели и контексте)": {
+            "preset_id": "newsletter",
+            "blocks": ["intro", "benefits", "cta", "help_link", "help"],
+            "benefits_title": "Главное",
+            "cta_text": "Подробнее",
+            "cta_link_placeholder": "[вставьте ссылку]",
+            "include_help_link": True,
+            "notes": "fallback",
+        },
     }
-    return mapping.get(campaign_type, mapping["Анонс фичи/продукта"])
+    return mapping.get(campaign_type, mapping["Другое (опишите в цели и контексте)"])
+
+
+def sanitize_plan(plan: dict, campaign_type: str) -> dict:
+    """
+    Страховка: если это не промо, выкидываем промо-блоки и убираем промо-лексикон из заголовков.
+    Так вы гарантированно не получите «Условия акции» в анонсе фичи.
+    """
+    plan = plan or {}
+    blocks = plan.get("blocks") or []
+
+    is_promo = campaign_type.strip() == "Акция/скидка/спецпредложение"
+
+    if not is_promo:
+        # 1) Удаляем промо-блоки
+        blocks = [b for b in blocks if b not in ("offer", "promo_terms")]
+
+        # 2) Если нужны условия/ограничения — это requirements (а не promo_terms)
+        if "requirements" not in blocks:
+            if "cta" in blocks:
+                idx = blocks.index("cta")
+                blocks.insert(idx, "requirements")
+            else:
+                blocks.append("requirements")
+
+        # 3) Подчищаем benefits_title, если он вдруг “съехал” в акцию
+        bt = (plan.get("benefits_title") or "").lower()
+        if any(word in bt for word in ["акц", "скид", "промокод", "услов"]):
+            plan["benefits_title"] = "Преимущества"
+
+    # Для promo наоборот — убеждаемся, что нужные блоки на месте
+    if is_promo:
+        if "offer" not in blocks:
+            blocks.insert(1, "offer") if blocks else blocks.append("offer")
+        if "promo_terms" not in blocks:
+            # обычно условия лучше ближе к CTA
+            if "cta" in blocks:
+                idx = blocks.index("cta")
+                blocks.insert(idx, "promo_terms")
+            else:
+                blocks.append("promo_terms")
+
+    plan["blocks"] = blocks
+    return plan
 
 
 st.set_page_config(page_title="Email Generator (Smart Templates)", layout="centered")
@@ -113,17 +164,17 @@ with st.form("form"):
 
     topic = st.text_input(
         "Тема/что за рассылка (кратко)",
-        placeholder="Напр.: «Скидка 20% на тариф до конца месяца» / «Вебинар про аналитические отчёты» / «Поздравление с 8 марта»",
+        placeholder="Напр.: «Новый экспорт в CSV» / «Вебинар про отчёты» / «Поздравление с праздником»",
     )
 
     audience = st.text_input("ЦА", placeholder="Напр.: владельцы сайтов, маркетологи, пользователи тарифа PRO")
-    goal = st.text_input("Цель", placeholder="Напр.: увеличить регистрации / довести до включения / собрать ответы")
+    goal = st.text_input("Цель", placeholder="Напр.: довести до включения / увеличить регистрации / собрать ответы")
 
     desired_length = st.selectbox("Желаемая длина", ["short", "medium"], index=0)
 
     must_include = st.text_area(
         "Обязательные пункты (что точно должно быть в письме)",
-        placeholder="Списком. Напр.:\n- Условия акции\n- Сроки\n- Промокод\n- Где зарегистрироваться\n- Ограничения\n- Контакт поддержки",
+        placeholder="Списком. Напр.:\n- Где включить\n- Инструкция\n- Ограничения\n- Даты/время (если вебинар)\n- Условия (если акция)\n- Контакт поддержки",
         height=180,
     )
 
@@ -147,7 +198,7 @@ if submitted:
         st.error("Заполните минимум: тип рассылки, тема, ЦА, цель, обязательные пункты.")
         st.stop()
 
-    # 1) Planner: выбрать пресет и блоки
+    # 1) Planner
     planner_prompt = build_planner_prompt(
         campaign_type=campaign_type,
         audience=audience,
@@ -161,12 +212,15 @@ if submitted:
 
     with st.spinner("Подбираю шаблон и блоки..."):
         try:
-            raw_plan = ollama_generate(planner_prompt, temperature=0.1, num_predict=260)
+            raw_plan = ollama_generate(planner_prompt, temperature=0.1, num_predict=320)
             plan = safe_parse_json(raw_plan)
         except Exception:
             plan = fallback_plan(campaign_type)
 
-    # 2) Writer: написать письмо по плану
+    # Санитарная правка плана, чтобы не было «Условия акции» вне промо-сценария
+    plan = sanitize_plan(plan, campaign_type)
+
+    # 2) Writer
     writer_prompt = build_writer_prompt(
         plan=plan,
         campaign_type=campaign_type,
@@ -181,7 +235,7 @@ if submitted:
 
     with st.spinner("Пишу письмо..."):
         try:
-            result = ollama_generate(writer_prompt, temperature=0.8, num_predict=950)
+            result = ollama_generate(writer_prompt, temperature=0.8, num_predict=1100)
         except Exception as e:
             st.error("Не удалось получить ответ от модели. Проверьте Ollama и имя модели в app.py.")
             st.code(str(e))
