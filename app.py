@@ -23,129 +23,79 @@ def ollama_generate(prompt: str, *, temperature: float, num_predict: int) -> str
     return (r.json().get("response") or "").strip()
 
 
-def fallback_plan(campaign_type: str) -> dict:
-    mapping = {
-        "Анонс фичи/продукта": {
-            "preset_id": "feature",
-            "blocks": ["intro", "how_it_works", "benefits", "steps", "requirements", "cta", "help_link", "help"],
-            "benefits_title": "Преимущества",
-            "steps_heading": "Как начать пользоваться",
-            "cta_text": "Начать пользоваться",
-            "cta_link_placeholder": "[вставьте ссылку]",
-            "include_help_link": True,
-            "notes": "fallback",
-        },
-        "Акция/скидка/спецпредложение": {
-            "preset_id": "promo",
-            "blocks": ["intro", "offer", "benefits", "promo_terms", "cta", "help_link", "help"],
-            "benefits_title": "Что вы получите",
-            "steps_heading": "",
-            "cta_text": "Воспользоваться предложением",
-            "cta_link_placeholder": "[вставьте ссылку]",
-            "include_help_link": True,
-            "notes": "fallback",
-        },
-        "Вебинар/ивент": {
+def fallback_plan(campaign_type: str, link_url: str) -> dict:
+    # Минимальные планы на случай, если planner вернёт некорректный JSON
+    if campaign_type == "Вебинар/ивент":
+        return {
             "preset_id": "webinar",
-            "blocks": ["intro", "event_details", "agenda", "registration_steps", "cta", "help_link", "help"],
+            "blocks": ["intro", "event_details", "agenda", "cta", "help"],
+            "steps_heading": "Как зарегистрироваться",
             "benefits_title": "Почему стоит прийти",
-            "steps_heading": "",
-            "cta_text": "Зарегистрироваться",
-            "cta_link_placeholder": "[вставьте ссылку]",
-            "include_help_link": True,
+            "instruction_title": "Ссылка на регистрацию",
+            "cta_title": "Зарегистрируйтесь на вебинар",
+            "use_link": True if link_url else False,
             "notes": "fallback",
-        },
-        "Праздник/поздравление": {
-            "preset_id": "holiday",
-            "blocks": ["holiday_greeting", "intro", "benefits", "cta", "help"],
-            "benefits_title": "Что полезного",
-            "steps_heading": "",
-            "cta_text": "Перейти",
-            "cta_link_placeholder": "[вставьте ссылку]",
-            "include_help_link": False,
+        }
+
+    if campaign_type == "Акция/скидка/спецпредложение":
+        return {
+            "preset_id": "promo",
+            "blocks": ["intro", "offer", "benefits", "promo_terms", "cta", "help"],
+            "steps_heading": "Как воспользоваться предложением",
+            "benefits_title": "Что вы получите",
+            "instruction_title": "Подробнее об условиях",
+            "cta_title": "Воспользуйтесь предложением",
+            "use_link": True if link_url else False,
             "notes": "fallback",
-        },
-        "Дайджест/новости": {
-            "preset_id": "newsletter",
-            "blocks": ["intro", "benefits", "cta", "help_link", "help"],
-            "benefits_title": "Главное",
-            "steps_heading": "",
-            "cta_text": "Открыть",
-            "cta_link_placeholder": "[вставьте ссылку]",
-            "include_help_link": True,
-            "notes": "fallback",
-        },
-        "Реактивация (вернуть пользователя)": {
-            "preset_id": "reactivation",
-            "blocks": ["intro", "benefits", "steps", "cta", "help_link", "help"],
-            "benefits_title": "Что изменилось",
-            "steps_heading": "Как вернуться к использованию",
-            "cta_text": "Попробовать снова",
-            "cta_link_placeholder": "[вставьте ссылку]",
-            "include_help_link": True,
-            "notes": "fallback",
-        },
-        "Опрос/NPS/обратная связь": {
-            "preset_id": "survey",
-            "blocks": ["intro", "cta", "help"],
-            "benefits_title": "Зачем это нужно",
-            "steps_heading": "",
-            "cta_text": "Пройти опрос",
-            "cta_link_placeholder": "[вставьте ссылку]",
-            "include_help_link": False,
-            "notes": "fallback",
-        },
-        "Другое (опишите в цели и контексте)": {
-            "preset_id": "newsletter",
-            "blocks": ["intro", "benefits", "cta", "help_link", "help"],
-            "benefits_title": "Главное",
-            "steps_heading": "",
-            "cta_text": "Подробнее",
-            "cta_link_placeholder": "[вставьте ссылку]",
-            "include_help_link": True,
-            "notes": "fallback",
-        },
+        }
+
+    # по умолчанию — фича/обычное письмо
+    blocks = ["intro", "how_it_works", "benefits", "steps", "requirements", "cta", "help"]
+    if link_url:
+        blocks.insert(2, "instruction_link")  # после how_it_works
+    return {
+        "preset_id": "feature",
+        "blocks": blocks,
+        "steps_heading": "Как начать пользоваться",
+        "benefits_title": "Преимущества",
+        "instruction_title": "Инструкция",
+        "cta_title": "Попробуйте прямо сейчас",
+        "use_link": True if link_url else False,
+        "notes": "fallback",
     }
-    return mapping.get(campaign_type, mapping["Другое (опишите в цели и контексте)"])
 
 
-def sanitize_plan(plan: dict, campaign_type: str) -> dict:
+def sanitize_plan(plan: dict, campaign_type: str, link_url: str) -> dict:
     """
-    Страховка от промо-блоков и промо-заголовков в непро-мо рассылках.
+    Страховка: убираем промо-блоки из НЕ promo и добавляем link-блок, если ссылка дана.
     """
     plan = plan or {}
     blocks = plan.get("blocks") or []
-
     is_promo = campaign_type.strip() == "Акция/скидка/спецпредложение"
 
     if not is_promo:
         blocks = [b for b in blocks if b not in ("offer", "promo_terms")]
-
-        # если модель всё равно хочет вставить "условия", пусть это будет requirements
-        if "requirements" not in blocks:
+        # requirements полезен почти всегда (как "Что учитывать")
+        if "requirements" not in blocks and campaign_type not in ("Праздник/поздравление", "Дайджест/новости"):
             if "cta" in blocks:
-                idx = blocks.index("cta")
-                blocks.insert(idx, "requirements")
+                blocks.insert(blocks.index("cta"), "requirements")
             else:
                 blocks.append("requirements")
 
-        bt = (plan.get("benefits_title") or "").lower()
-        if any(word in bt for word in ["акц", "скид", "промокод", "услов"]):
-            plan["benefits_title"] = "Преимущества"
-
-        # если в не-про-мо steps_heading вдруг пустой, оставляем пустым — writer сам подставит по типу
-        if plan.get("steps_heading") is None:
-            plan["steps_heading"] = ""
-
-    if is_promo:
-        if "offer" not in blocks:
-            blocks.insert(1, "offer") if blocks else blocks.append("offer")
-        if "promo_terms" not in blocks:
-            if "cta" in blocks:
-                idx = blocks.index("cta")
-                blocks.insert(idx, "promo_terms")
-            else:
-                blocks.append("promo_terms")
+    # если ссылка дана — добавим instruction_link там, где уместно
+    if link_url and link_url.strip():
+        if campaign_type in ("Анонс фичи/продукта", "Реактивация (вернуть пользователя)", "Другое (опишите в цели и контексте)"):
+            if "instruction_link" not in blocks:
+                # логично вставить после how_it_works, а если его нет — после intro
+                if "how_it_works" in blocks:
+                    blocks.insert(blocks.index("how_it_works") + 1, "instruction_link")
+                elif "intro" in blocks:
+                    blocks.insert(blocks.index("intro") + 1, "instruction_link")
+                else:
+                    blocks.insert(0, "instruction_link")
+        if campaign_type == "Вебинар/ивент":
+            # для вебинара instruction_link не обязателен, достаточно ссылки в CTA, но не мешает
+            pass
 
     plan["blocks"] = blocks
     return plan
@@ -169,15 +119,20 @@ with st.form("form"):
         ],
     )
 
-    topic = st.text_input("Тема/что за рассылка (кратко)", placeholder="Напр.: «Экспорт в CSV»")
-    audience = st.text_input("ЦА", placeholder="Напр.: владельцы сайтов, маркетологи")
+    topic = st.text_input("Тема/что за рассылка (кратко)", placeholder="Напр.: «ИИ-помощник в Директе»")
+    audience = st.text_input("ЦА", placeholder="Напр.: маркетологи, владельцы бизнеса")
     goal = st.text_input("Цель", placeholder="Напр.: довести до использования / увеличить регистрации")
+
+    link_url = st.text_input(
+        "Ссылка (если есть) — справка/лендинг/регистрация",
+        placeholder="Напр.: https://yandex.ru/support/...",
+    )
 
     desired_length = st.selectbox("Желаемая длина", ["short", "medium"], index=0)
 
     must_include = st.text_area(
         "Обязательные пункты (что точно должно быть в письме)",
-        placeholder="Списком. Например:\n- Где включить\n- Шаги\n- Ограничения\n- Ссылка на справку\n- Куда писать за помощью",
+        placeholder="Списком. Например:\n- Где включить\n- Шаги\n- Ограничения\n- Контакт поддержки",
         height=180,
     )
 
@@ -189,7 +144,7 @@ with st.form("form"):
 
     context = st.text_area(
         "Контекст/детали (опционально)",
-        placeholder="Даты/ссылки/условия/где кнопка/что важно учесть и т.д.",
+        placeholder="Детали: где кнопка, кому доступно, условия доступа, дата/время вебинара и т.д.",
         height=120,
     )
 
@@ -201,7 +156,6 @@ if submitted:
         st.error("Заполните минимум: тема, ЦА, цель, обязательные пункты.")
         st.stop()
 
-    # 1) Planner (внутренний шаг)
     planner_prompt = build_planner_prompt(
         campaign_type=campaign_type,
         audience=audience,
@@ -211,18 +165,18 @@ if submitted:
         culture=culture,
         context=context,
         desired_length=desired_length,
+        link_url=link_url,
     )
 
-    with st.spinner("Генерирую..."):
+    with st.spinner("Генерирую письмо..."):
         try:
             raw_plan = ollama_generate(planner_prompt, temperature=0.1, num_predict=320)
             plan = safe_parse_json(raw_plan)
         except Exception:
-            plan = fallback_plan(campaign_type)
+            plan = fallback_plan(campaign_type, link_url)
 
-        plan = sanitize_plan(plan, campaign_type)
+        plan = sanitize_plan(plan, campaign_type, link_url)
 
-        # 2) Writer
         writer_prompt = build_writer_prompt(
             plan=plan,
             campaign_type=campaign_type,
@@ -233,18 +187,18 @@ if submitted:
             culture=culture,
             context=context,
             desired_length=desired_length,
+            link_url=link_url,
         )
 
         try:
-            result = ollama_generate(writer_prompt, temperature=0.8, num_predict=1100)
+            result = ollama_generate(writer_prompt, temperature=0.8, num_predict=1200)
         except Exception as e:
             st.error("Не удалось получить ответ от модели. Проверьте Ollama и имя модели в app.py.")
             st.code(str(e))
             st.stop()
 
-    # Публикуем только результат
-    st.subheader("Готовое письмо")
+    st.subheader("Готовое письмо (Markdown)")
     st.markdown(result)
 
-    st.subheader("Markdown для копирования")
+    st.subheader("Скопировать Markdown")
     st.code(result)
