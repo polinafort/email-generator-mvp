@@ -6,6 +6,8 @@
 
 Код написан при помощи ChatGPT 
 
+## Пример сгенерированной рассылки: https://github.com/polinafort/email-generator-mvp/blob/main/example_email.md
+
 # Установка и запуск приложения
 
 ## 1) Установите нужное ПО
